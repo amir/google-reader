@@ -14,7 +14,13 @@ module Web.Google.Reader
   , clientLogin
   , subscriptionList
   , defaultEditSubscriptionOptions
+  , streamId
+  , authToken
+  , addTo
+  , removeFrom
+  , streamTitle
     -- Types
+  , StreamId
   , Tokens                  (..)
   , UserInfo                (..)
   , ReaderError             (..)
