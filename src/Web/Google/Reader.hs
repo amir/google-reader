@@ -1,20 +1,26 @@
 {-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Web.Google.Reader
   ( -- Functions
     ping
+  , edit
   , token
   , userInfo
+  , subscribe
   , bazQuxRoot
+  , unsubscribe
   , clientLogin
   , subscriptionList
+  , defaultEditSubscriptionOptions
     -- Types
-  , Tokens        (..)
-  , UserInfo      (..)
-  , ReaderError   (..)
-  , Subscriptions (..)
-  , ReaderOptions (..)
+  , Tokens                  (..)
+  , UserInfo                (..)
+  , ReaderError             (..)
+  , Subscriptions           (..)
+  , ReaderOptions           (..)
+  , EditSubscriptionOptions (..)
   ) where
 
 import Data.List
@@ -32,6 +38,8 @@ import qualified Network.Wreq as Wreq
 import qualified Data.ByteString.Char8 as C
 import qualified Network.HTTP.Client as HTTP
 import qualified Data.ByteString.Lazy as LBS (toStrict, ByteString, unpack)
+
+type Token = String
 
 data TokenType = SID
                | LSID
@@ -82,7 +90,30 @@ data Endpoint = PingEndpoint
               | TokenEndpoint
               | UserInfoEndpoint
               | ClientLoginEndpoint
+              | SubscriptionEditEndpoint
               | SubscriptionListEndpoint
+
+type StreamId = T.Text
+
+data EditSubscriptionOptions = EditSubscriptionOptions {
+      _action      :: String
+    , _streamId    :: StreamId
+    , _authToken   :: T.Text
+    , _addTo       :: Maybe [ StreamId ]
+    , _removeFrom  :: Maybe [ StreamId ]
+    , _streamTitle :: Maybe T.Text
+  } deriving (Show, Eq)
+
+makeLenses ''EditSubscriptionOptions
+
+defaultEditSubscriptionOptions = EditSubscriptionOptions {
+    _addTo       = Nothing
+  , _action      = ""
+  , _streamId    = ""
+  , _authToken   = ""
+  , _removeFrom  = Nothing
+  , _streamTitle = Nothing
+}
 
 instance FromJSON Subscription where
   parseJSON (Object v) = Subscription         <$>
@@ -136,6 +167,7 @@ getUri readerOptions endpoint =
       UserInfoEndpoint         -> "/reader/api/0/user-info"
       ClientLoginEndpoint      -> "/accounts/ClientLogin"
       SubscriptionListEndpoint -> "/reader/api/0/subscription/list"
+      SubscriptionEditEndpoint -> "/reader/api/0/subscription/edit"
 
 getCause :: HTTP.HttpException -> ReaderError
 getCause e = case e of
@@ -232,3 +264,29 @@ subscriptionList readerOptions tokens = do
   where
     options = (addAuthHeader Wreq.defaults (auth tokens)) & Wreq.param "output" .~ ["json"]
     uri = getUri readerOptions SubscriptionListEndpoint
+
+subscriptionEdit :: ReaderOptions -> Tokens -> EditSubscriptionOptions -> IO (Either ReaderError String)
+subscriptionEdit readerOptions tokens editSubscriptionOptions = do
+  res <- tryWreq(Wreq.postWith options uri formParams)
+  case res of
+    Left  e -> return $ Left e
+    Right r -> return $ Right $ C.unpack $ LBS.toStrict r
+  where
+    options = (addAuthHeader Wreq.defaults (auth tokens)) & Wreq.param "T" .~ [editSubscriptionOptions ^. authToken]
+    formParams = [
+                    "ac" Wreq.:= editSubscriptionOptions ^. action
+                  , "s"  Wreq.:= editSubscriptionOptions ^. streamId
+                 ]
+    uri = getUri readerOptions SubscriptionEditEndpoint
+
+subscribe readerOptions tokens editSubscriptionOptions =
+  subscriptionEdit readerOptions tokens options
+  where options = action .~ "subscribe" $ editSubscriptionOptions
+
+unsubscribe readerOptions tokens editSubscriptionOptions =
+  subscriptionEdit readerOptions tokens options
+  where options = action .~ "unsubscribe" $ editSubscriptionOptions
+
+edit readerOptions tokens editSubscriptionOptions =
+  subscriptionEdit readerOptions tokens options
+  where options = action .~ "edit" $ editSubscriptionOptions
