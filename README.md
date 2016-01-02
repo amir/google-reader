@@ -1,7 +1,7 @@
 # google-reader
 
 ```haskell
-main :: IO
+main :: IO ()
 main = do
   p <- clientLogin readerOptions
   case p of
